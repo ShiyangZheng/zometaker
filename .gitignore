@@ -1,0 +1,18 @@
+# Build artefacts
+*.xpi
+*.bak
+*~
+
+# Editor
+.DS_Store
+*.swp
+.vscode/
+.idea/
+
+# Test artefacts
+node_modules/
+coverage/
+
+# Logs
+*.log
+npm-debug.log*

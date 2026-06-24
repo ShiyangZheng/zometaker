@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+	Zometaker — Preferences pane.
+
+	Root element is a <vbox> (NOT <window>) because Zotero's
+	PreferencePanes.register treats the src file as an XUL fragment to
+	embed inside its own preferences window. <window> would create a
+	nested browser and the form widgets wouldn't bind to Zotero.Prefs.
+
+	Script bindings are loaded via the `scripts:` array in the
+	register() call (see zometaker.js#initUI), NOT via a
+	<script> tag here — that would 404 because chrome.manifest maps
+	the content path to `content/`, not `chrome/content/`.
+
+	Labels are inline (not FTL) because Zotero's FTL resolution only
+	works for menu items, not for prefs-pane widgets in this context.
+-->
+<vbox
+	xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+	xmlns:html="http://www.w3.org/1999/xhtml"
+	flex="1"
+	style="padding: 16px; overflow-y: auto;">
+
+	<html:h2>Zometaker</html:h2>
+	<html:p style="margin-top: -8px; color: #666;">
+		Auto-update, normalise, and complete metadata for items in your
+		Zotero library. APA 7 reference formatting. Uses CrossRef / OpenAlex / DataCite APIs.
+	</html:p>
+
+	<!-- ===== Data sources ===== -->
+	<groupbox>
+		<caption label="Data sources" />
+		<grid>
+			<columns>
+				<column flex="1" />
+				<column flex="2" />
+			</columns>
+			<rows>
+				<row>
+					<label value="Primary API:" />
+					<menulist id="pref-api-primary">
+						<menupopup>
+							<menuitem label="CrossRef" value="crossref" />
+							<menuitem label="OpenAlex" value="openalex" />
+							<menuitem label="DataCite" value="datacite" />
+						</menupopup>
+					</menulist>
+				</row>
+				<row>
+					<label value="Fallback API:" />
+					<menulist id="pref-api-fallback">
+						<menupopup>
+							<menuitem label="OpenAlex" value="openalex" />
+							<menuitem label="CrossRef" value="crossref" />
+							<menuitem label="DataCite" value="datacite" />
+							<menuitem label="(none)" value="none" />
+						</menupopup>
+					</menulist>
+				</row>
+				<row>
+					<label value="Contact e-mail (mailto):" />
+					<textbox id="pref-mailto"
+					         placeholder="you@example.com" />
+				</row>
+				<row>
+					<label value="Requests / second:" />
+					<hbox>
+						<textbox id="pref-rps" type="number" min="1" max="50" />
+						<label value="(CrossRef etiquette recommends ≤ 5/s)"
+						       style="margin-left: 8px;" />
+					</hbox>
+				</row>
+			</rows>
+		</grid>
+		<html:p style="margin: 6px 0 0 0; font-size: 11px; color: #888;">
+			CrossRef's API etiquette asks you to identify yourself via the
+			<code>User-Agent</code> header. Adding a contact e-mail here is
+			the polite thing to do (and they'll contact you if your client
+			misbehaves).
+		</html:p>
+	</groupbox>
+
+	<!-- ===== APA 7 mode ===== -->
+	<groupbox>
+		<caption label="APA 7th edition reference formatting" />
+		<checkbox id="pref-apa-strict"
+		          label="Enable APA 7 strict mode (auto-apply rule fixes)" />
+		<grid>
+			<columns>
+				<column flex="1" />
+				<column flex="3" />
+			</columns>
+			<rows>
+				<row>
+					<label value="Enabled rule ids:" />
+					<textbox id="pref-apa-rules"
+					         placeholder="R1,R4,R5,R6,R7,R8,R9,R11,R12,R13,R14,R15,R17" />
+				</row>
+			</rows>
+		</grid>
+		<html:p style="margin: 6px 0 0 0; font-size: 11px; color: #888;">
+			Rule ids implemented:
+			<code>R1</code> surname-comma-initials,
+			<code>R4</code> all-caps given names,
+			<code>R5</code> date / n.d.,
+			<code>R6</code> article title sentence case,
+			<code>R7</code> journal title case,
+			<code>R8</code> volume numeric,
+			<code>R9</code> issue numeric,
+			<code>R11</code> en-dash pages,
+			<code>R12</code> DOI URL form,
+			<code>R13</code> ISBN 10/13,
+			<code>R14</code> publisher no location,
+			<code>R15</code> edition "2nd ed.",
+			<code>R17</code> missing required fields.
+		</html:p>
+	</groupbox>
+
+	<!-- ===== Normalisation ===== -->
+	<groupbox>
+		<caption label="Normalisation" />
+		<grid>
+			<columns>
+				<column flex="1" />
+				<column flex="2" />
+			</columns>
+			<rows>
+				<row>
+					<label value="Author name mode:" />
+					<menulist id="pref-names-mode">
+						<menupopup>
+							<menuitem label="APA 7 initials (Smith, J. M.)" value="initials" />
+							<menuitem label="Title case (Smith, John Michael)" value="titlecase" />
+						</menupopup>
+					</menulist>
+				</row>
+			</rows>
+		</grid>
+		<checkbox id="pref-norm-names"
+		          label="Author names (surname-first, comma-separated)" />
+		<checkbox id="pref-norm-journal"
+		          label="Journal names → Title Case (Nature, J. Cognition)" />
+		<checkbox id="pref-norm-pages"
+		          label="Page ranges use en-dash (123–129 not 123-129)" />
+		<checkbox id="pref-norm-title"
+		          label="Article / book titles → Sentence case" />
+		<checkbox id="pref-norm-publisher"
+		          label="Publishers (strip City: prefix, &quot;Inc./Publishers&quot; suffix)" />
+		<checkbox id="pref-norm-doi"
+		          label="DOI (URL form: https://doi.org/...)" />
+		<checkbox id="pref-norm-isbn"
+		          label="ISBN (digits only, length 10 or 13)" />
+		<checkbox id="pref-norm-edition"
+		          label="Edition (2nd ed., 3rd ed., ...)" />
+		<checkbox id="pref-norm-volissue"
+		          label="Volume / issue numeric only" />
+	</groupbox>
+
+	<!-- ===== Completion ===== -->
+	<groupbox>
+		<caption label="Missing data" />
+		<checkbox id="pref-complete-missing"
+		          label="Fill missing fields from DOI / ISBN lookup" />
+		<checkbox id="pref-complete-abstract"
+		          label="Also fill missing abstracts" />
+	</groupbox>
+
+	<!-- ===== Other ===== -->
+	<groupbox>
+		<caption label="Other" />
+		<checkbox id="pref-dry-run"
+		          label="Dry run (don't write anything, just report)" />
+		<checkbox id="pref-skip-non-journals"
+		          label="Skip non-journal items (books, theses, webpages, …)" />
+	</groupbox>
+
+	<spacer flex="1" />
+
+	<hbox>
+		<button id="run-library-button"
+		        label="Run on library"
+		        oncommand="Zotero.Zometaker.runOnLibrary();" />
+		<button id="run-selection-button"
+		        label="Run on selection"
+		        oncommand="Zotero.Zometaker.runOnSelection();" />
+		<spacer flex="1" />
+		<button id="show-report-button"
+		        label="Show last report"
+		        oncommand="Zotero.Zometaker.showLastSummary();" />
+	</hbox>
+
+	<html:p style="margin-top: 12px; font-size: 11px; color: #888;">
+		Tip: enable "Dry run" the first time you run this on a large
+		library so you can review the diff before committing changes.
+		You can also run "Show last report" from the Tools menu.
+	</html:p>
+</vbox>
