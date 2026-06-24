@@ -328,10 +328,111 @@ var NameNormalizer = (function () {
 		};
 	}
 
+	// Split a single-field author string ("Titone, D. A.") into a
+	// clean two-field object. Uses Zotero's own Zotero.Utilities.cleanAuthor
+	// when available (the path every Zotero translator uses); falls
+	// back to a local routine when running under Node tests.
+	function _splitSingleFieldAuthor(raw, creatorType, mode) {
+		if (!raw || typeof raw !== 'string') return null;
+		const s = raw.trim().replace(/\s+/g, ' ');
+		if (!s) return null;
+		let split = null;
+		try {
+			if (typeof Zotero !== 'undefined' && Zotero.Utilities && typeof Zotero.Utilities.cleanAuthor === 'function') {
+				const ct = creatorType || 'author';
+				// useComma=true tells cleanAuthor to prefer a comma split.
+				split = Zotero.Utilities.cleanAuthor(s, ct, true);
+			}
+		} catch (e) {
+			split = null;
+		}
+		if (!split) {
+			// Local fallback: smart split based on comma presence.
+			split = _localSplitAuthor(s, creatorType);
+		}
+		if (!split) return null;
+
+		// ----- Post-process the surname -----
+		// Don't run `normalise` (it'd re-interpret as full author
+		// string). Instead, light cleanup: trim, collapse whitespace,
+		// title-case particles properly.
+		let lastName = (split.lastName || '').trim().replace(/\s+/g, ' ');
+		if (lastName && hasLatin(lastName)) {
+			const lastTokens = lastName.split(/\s+/);
+			lastName = lastTokens.map((w, i) => {
+				const lower = w.toLowerCase().replace(/\.$/, '');
+				if (i > 0 && PARTICLES.has(lower)) return w.toLowerCase();
+				return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+			}).join(' ');
+		}
+
+		// ----- Post-process the given name -----
+		// cleanAuthor produces "D. A." already; local fallback may
+		// produce "John Michael" form. For "initials" mode, reduce
+		// multi-token given names to APA-7 initials.
+		let firstName = (split.firstName || '').trim().replace(/\s+/g, ' ');
+		if (mode === 'initials' && firstName && hasLatin(firstName)) {
+			firstName = normaliseGiven(firstName, 'initials');
+		}
+
+		return {
+			firstName,
+			lastName,
+			creatorType: split.creatorType || creatorType || 'author',
+		};
+	}
+
+	// Local fallback for Zotero.Utilities.cleanAuthor. Logic mirrors
+	// what cleanAuthor does for the most common shapes:
+	//   "Surname, Given"       → split at first comma
+	//   "Surname Given1 Given2"→ split at last space (surname = last)
+	//   "Multi Word Institutional" → single name (institutional)
+	//   single token           → single name
+	// Heuristic: if the whole input has no comma and more than 2
+	// tokens, treat as institutional (single field, lastName = whole).
+	function _localSplitAuthor(s, creatorType) {
+		if (!s) return null;
+		if (s.includes(',')) {
+			const idx = s.indexOf(',');
+			return {
+				lastName: s.slice(0, idx).trim(),
+				firstName: s.slice(idx + 1).trim(),
+				creatorType: creatorType || 'author',
+			};
+		}
+		const toks = s.split(/\s+/).filter(Boolean);
+		if (toks.length === 1) {
+			return { lastName: toks[0], firstName: '', creatorType: creatorType || 'author' };
+		}
+		// Roman numeral trailing → regnal name, single field
+		if (toks.length === 2 && ROMAN_RE.test(toks[1].toLowerCase().replace(/\.$/, ''))) {
+			return { lastName: s, firstName: '', creatorType: creatorType || 'author' };
+		}
+		// 3+ tokens with no comma → likely institutional / multi-word name
+		// (e.g. "World Health Organization", "Royal Society of Chemistry").
+		// Default to single-field surname.
+		if (toks.length >= 3) {
+			return { lastName: s, firstName: '', creatorType: creatorType || 'author' };
+		}
+		// 2 tokens: assume inverted ("John Smith" → surname="Smith",
+		// given="John"). Exception: if the would-be given name is a
+		// particle, treat the whole input as a single compound surname
+		// ("von Goethe" → lastName="Von Goethe", firstName="").
+		if (PARTICLES.has(toks[0].toLowerCase().replace(/\.$/, ''))) {
+			return { lastName: s, firstName: '', creatorType: creatorType || 'author' };
+		}
+		return {
+			lastName: toks[toks.length - 1],
+			firstName: toks.slice(0, -1).join(' '),
+			creatorType: creatorType || 'author',
+		};
+	}
+
 	return {
 		normalise,
 		normaliseList,
 		splitForZotero,
+		_splitSingleFieldAuthor,
 		_normaliseOne: normaliseOne,
 	};
 })();

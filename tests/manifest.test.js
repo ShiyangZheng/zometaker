@@ -1,8 +1,8 @@
 /*
 	Manifest validation test.
 
-	Working schema for Zotero 9 (verified by 1.1.8-prev.xpi installing
-	successfully, vs 1.1.9 MV3 failing with "Property 'applications' is
+	Working schema for Zotero 9 (verified by previous xpi installing
+	successfully vs MV3 failing with "Property 'applications' is
 	unsupported in Manifest Version 3"):
 
 	  manifest_version: 2

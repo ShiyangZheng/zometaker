@@ -43,7 +43,8 @@ function makeItem(fields, creators = []) {
 const ALL_RULES = {
 	R1: true, R4: true, R5: true, R6: true, R7: true,
 	R8: true, R9: true, R11: true, R12: true, R13: true,
-	R14: true, R15: true, R17: true,
+	R14: true, R15: true, R17: true, R18: true,
+	R19: true, R20: true,
 };
 
 // ===== R5: date =====
@@ -128,6 +129,192 @@ const ALL_RULES = {
 	const issues = APAChecker.all(it, { rules: ALL_RULES });
 	const r4 = issues.find((i) => i.rule === 'R4');
 	eq(r4 && r4.field, 'creators', 'R4: ALL CAPS given name flagged');
+}
+
+// ===== R18: single-field author (fieldMode=1) — the (D. A. Titone & Connine, 1999) bug =====
+{
+	const it = makeItem(
+		{ title: 'On the building blocks of words' },
+		[
+			{ firstName: '', lastName: 'Titone, D. A.', creatorType: 'author', fieldMode: 1 },
+			{ firstName: '', lastName: 'Connine, C. M.', creatorType: 'author', fieldMode: 1 },
+		],
+	);
+	const issues = APAChecker.all(it, { rules: ALL_RULES });
+	const r18s = issues.filter((i) => i.rule === 'R18');
+	eq(r18s.length, 2, 'R18: two single-field creators flagged');
+	eq(r18s[0].before, 'Titone, D. A.', 'R18: before = full single-field string');
+	eq(r18s[0].field, 'creators', 'R18: field is creators');
+	eq(r18s[0].severity, 'error', 'R18: severity = error');
+}
+{
+	// Two-field creator should NOT be flagged.
+	const it = makeItem(
+		{ title: 'x' },
+		[{ firstName: 'D. A.', lastName: 'Titone', creatorType: 'author', fieldMode: 0 }],
+	);
+	const issues = APAChecker.all(it, { rules: ALL_RULES });
+	eq(issues.filter((i) => i.rule === 'R18').length, 0, 'R18: two-field creator not flagged');
+}
+{
+	// R18 disabled → no issues even with single-field creators.
+	const it = makeItem(
+		{ title: 'x' },
+		[{ firstName: '', lastName: 'Titone, D. A.', creatorType: 'author', fieldMode: 1 }],
+	);
+	const issues = APAChecker.all(it, { rules: { R18: false } });
+	eq(issues.filter((i) => i.rule === 'R18').length, 0, 'R18: disabled rule skips flag');
+}
+
+// ===== R4: all-caps given name → initial, not surname =====
+{
+	const it = makeItem(
+		{ title: 'x' },
+		[{ firstName: 'ERMAN', lastName: 'B.', creatorType: 'author', fieldMode: 0 }],
+	);
+	const issues = APAChecker.all(it, { rules: ALL_RULES });
+	const r4 = issues.find((i) => i.rule === 'R4');
+	eq(r4 && r4.after, 'E.', 'R4: ERMAN → E. (initial, not "Erman")');
+}
+
+// ===== R19: HTML tags / entities / weird whitespace =====
+{
+	const it = makeItem({
+		title: 'Putting a Lexical                 Approach to the test',
+	});
+	const issues = APAChecker.all(it, { rules: ALL_RULES });
+	const r19 = issues.find((i) => i.rule === 'R19' && i.field === 'title');
+	eq(r19 && r19.after, 'Putting a Lexical Approach to the test', 'R19: collapse multi-space');
+}
+{
+	const it = makeItem({
+		title: 'The Effect of Equal Versus Expanding Spacing Practice on the Deliberate Learning of                     <scp>L2</scp>                     Collocations',
+	});
+	const issues = APAChecker.all(it, { rules: ALL_RULES });
+	const r19 = issues.find((i) => i.rule === 'R19' && i.field === 'title');
+	eq(r19 && r19.after,
+		'The Effect of Equal Versus Expanding Spacing Practice on the Deliberate Learning of L2 Collocations',
+		'R19: strip <scp> tags + collapse whitespace');
+}
+{
+	const it = makeItem({
+		publicationTitle: 'Memory &amp; Cognition',
+	});
+	const issues = APAChecker.all(it, { rules: ALL_RULES });
+	const r19 = issues.find((i) => i.rule === 'R19' && i.field === 'publicationTitle');
+	eq(r19 && r19.after, 'Memory & Cognition', 'R19: decode &amp; in journal');
+}
+{
+	const it = makeItem({ title: 'A normal sentence case title' });
+	const issues = APAChecker.all(it, { rules: ALL_RULES });
+	eq(issues.filter((i) => i.rule === 'R19' && i.field === 'title').length, 0,
+		'R19: clean title not flagged');
+}
+{
+	// R19 in creator names (e.g. connector gave "ERMAN <i>B.</i>")
+	const it = makeItem(
+		{ title: 'x' },
+		[{ firstName: 'ERMAN <i>B.</i>', lastName: 'Smith', creatorType: 'author', fieldMode: 0 }],
+	);
+	const issues = APAChecker.all(it, { rules: ALL_RULES });
+	const r19 = issues.find((i) => i.rule === 'R19' && i.field === 'creators');
+	eq(!!r19, true, 'R19: tagged creator name flagged');
+}
+
+// ===== R20: all-caps family name =====
+{
+	const it = makeItem(
+		{ title: 'x' },
+		[{ firstName: 'B.', lastName: 'ERMAN', creatorType: 'author', fieldMode: 0 }],
+	);
+	const issues = APAChecker.all(it, { rules: ALL_RULES });
+	const r20 = issues.find((i) => i.rule === 'R20');
+	eq(r20 && r20.after, 'Erman', 'R20: ERMAN → Erman');
+}
+{
+	// Compound family name with particle should stay capitalised properly.
+	const it = makeItem(
+		{ title: 'x' },
+		[{ firstName: 'J.', lastName: 'VON GOETHE', creatorType: 'author', fieldMode: 0 }],
+	);
+	const issues = APAChecker.all(it, { rules: ALL_RULES });
+	const r20 = issues.find((i) => i.rule === 'R20');
+	eq(r20 && r20.after, 'Von Goethe', 'R20: VON GOETHE → Von Goethe (particle cap)');
+}
+{
+	// Single-field creators (R18 territory) should NOT trigger R20.
+	const it = makeItem(
+		{ title: 'x' },
+		[{ firstName: '', lastName: 'Titone, D. A.', creatorType: 'author', fieldMode: 1 }],
+	);
+	const issues = APAChecker.all(it, { rules: ALL_RULES });
+	eq(issues.filter((i) => i.rule === 'R20').length, 0, 'R20: skips fieldMode=1 (R18 handles)');
+}
+
+// ===== Real bibliography: ERMAN & WARREN (2000) =====
+{
+	// User's actual data: ERMAN all-caps author, "Text - Interdisciplinary
+	// Journal for the Study of Discourse" already title-case.
+	const it = makeItem(
+		{
+			title: 'The idiom principle and the open choice principle',
+			publicationTitle: 'Text - Interdisciplinary Journal for the Study of Discourse',
+			DOI: '10.1515/text.1.2000.20.1.29',
+			date: '2000',
+		},
+		[
+			{ firstName: 'ERMAN', lastName: 'B.', creatorType: 'author', fieldMode: 0 },
+			{ firstName: 'WARREN', lastName: 'B.', creatorType: 'author', fieldMode: 0 },
+		],
+	);
+	const issues = APAChecker.all(it, { rules: ALL_RULES });
+	const r4s = issues.filter((i) => i.rule === 'R4');
+	eq(r4s.length, 2, 'ERMAN/WARREN: both R4 flagged');
+	eq(r4s[0].after, 'E.', 'ERMAN: after = E.');
+	eq(r4s[1].after, 'W.', 'WARREN: after = W.');
+}
+
+// ===== Real bibliography: Sonbul et al. (2024) with <scp> tags =====
+{
+	const it = makeItem({
+		title: 'The Effect of Equal Versus Expanding Spacing Practice on the Deliberate Learning of                     <scp>L2</scp>                     Collocations',
+		publicationTitle: 'TESOL Quarterly',
+		date: '2024',
+	});
+	const issues = APAChecker.all(it, { rules: ALL_RULES });
+	const r19 = issues.find((i) => i.rule === 'R19' && i.field === 'title');
+	eq(!!r19, true, 'Sonbul: <scp> flagged by R19');
+}
+
+// ===== Real bibliography: SPRENGER (all-caps family name) =====
+{
+	const it = makeItem(
+		{ title: 'x' },
+		[{ firstName: 'S.', lastName: 'SPRENGER', creatorType: 'author', fieldMode: 0 }],
+	);
+	const issues = APAChecker.all(it, { rules: ALL_RULES });
+	const r20 = issues.find((i) => i.rule === 'R20');
+	eq(r20 && r20.after, 'Sprenger', 'SPRENGER: R20 → Sprenger');
+}
+
+// ===== Helpers exposed for orchestrator use =====
+{
+	const h = APAChecker.helpers;
+	eq(h.decodeHtmlEntities('Memory &amp; Cognition'), 'Memory & Cognition',
+		'helpers.decodeHtmlEntities: &amp;');
+	eq(h.decodeHtmlEntities('Don&#39;t go'), "Don't go",
+		'helpers.decodeHtmlEntities: &#39;');
+	eq(h.decodeHtmlEntities('foo&nbsp;bar'), 'foo bar',
+		'helpers.decodeHtmlEntities: &nbsp;');
+	eq(h.stripTags('a <scp>L2</scp> b'), 'a L2 b',
+		'helpers.stripTags: <scp>');
+	eq(h.collapseWs('foo    bar'), 'foo bar',
+		'helpers.collapseWs: 4 spaces');
+	eq(h.collapseWs('foo\u00A0\u00A0bar'), 'foo bar',
+		'helpers.collapseWs: NBSP');
+	eq(h.tidyString('foo <i>bar</i>  baz  &amp; qux'),
+		'foo bar baz & qux',
+		'helpers.tidyString: combined');
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

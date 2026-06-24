@@ -54,7 +54,7 @@ var Prefs = {
 	get apaStrict() { return !!mcGetPref('apa.strict', true); },
 	get apaRules() {
 		// Comma-separated rule ids, e.g. "R1,R3,R4,R5,R6,R7,R8,R9,R11,R12,R14,R15"
-		const def = 'R1,R4,R5,R6,R7,R8,R9,R11,R12,R13,R14,R15,R17';
+		const def = 'R1,R4,R5,R6,R7,R8,R9,R11,R12,R13,R14,R15,R17,R18,R19,R20';
 		const raw = mcGetPref('apa.rules', def) || def;
 		const out = {};
 		raw.split(',').forEach((r) => { r = r.trim(); if (r) out[r] = true; });
@@ -152,17 +152,28 @@ function mcNormaliseField(item, field, ctx) {
 	if (!isNormaliserEnabled(cfg.normaliser)) return false;
 	var current = mcReadField(item, field);
 	if (!current) return false;
+
+	// R19: strip stray HTML / collapse weird whitespace *before* the
+	// normaliser runs, so R6 / R7 detect Title Case on the cleaned
+	// input and don't get fooled by connector scraper artefacts.
+	var tidy = APAChecker.helpers.tidyString(current);
+
 	var normaliser = FieldNormalizer[cfg.normaliser];
 	if (!normaliser) return false;
-	var normalised = normaliser(current);
-	if (normalised === current) return false;
+	var normalised = normaliser(tidy != null ? tidy : current);
+
+	// Pick the result that actually changed. If both tidy and
+	// normalise changed the string, use the normaliser's output (which
+	// applies R6/R7 sentence-case / title-case).
+	var final = (normalised !== current) ? normalised : (tidy != null && tidy !== current ? tidy : current);
+	if (final === current) return false;
 	if (Prefs.dryRun) {
-		ctx.changes.normalized.push({ field: field, from: current, to: normalised });
+		ctx.changes.normalized.push({ field: field, from: current, to: final });
 		return true;
 	}
 	try {
-		item.setField(field, normalised);
-		ctx.changes.normalized.push({ field: field, from: current, to: normalised });
+		item.setField(field, final);
+		ctx.changes.normalized.push({ field: field, from: current, to: final });
 		return true;
 	} catch (e) {
 		Zotero.debug('[Zometaker] normalise(' + field + ') failed: ' + e);
@@ -176,14 +187,88 @@ function mcNormaliseCreators(item, ctx) {
 	var changed = false;
 	var mode = Prefs.nameMode || 'initials';
 	var updated = creators.map(function (c) {
-		var before = JSON.stringify(c);
 		var next = {
-			firstName: c.firstName ? NameNormalizer.normalise(c.firstName, mode) : c.firstName,
-			lastName: c.lastName ? NameNormalizer.normalise(c.lastName, mode) : c.lastName,
-			fieldMode: c.fieldMode,
+			firstName: c.firstName || '',
+			lastName: c.lastName || '',
+			fieldMode: c.fieldMode || 0,
 			creatorType: c.creatorType,
 		};
-		if (JSON.stringify(next) !== before) changed = true;
+
+		// ----- R19: tidy stray HTML / weird whitespace -----
+		var tidyFN = APAChecker.helpers.tidyString(next.firstName);
+		var tidyLN = APAChecker.helpers.tidyString(next.lastName);
+		if (tidyFN !== null) next.firstName = tidyFN;
+		if (tidyLN !== null) next.lastName = tidyLN;
+
+		// ----- Single-field → two-field split (R18) -----
+		// Zotero stores some authors as fieldMode=1 with the whole
+		// "Surname, Given" string crammed into lastName. Word/Google
+		// Docs citations then render as "D. A. Titone" instead of
+		// "Titone". Use Zotero's own cleanAuthor (with useComma=true)
+		// to split, then run our normaliser over each part.
+		if (next.fieldMode === 1 && next.lastName) {
+			var split = NameNormalizer._splitSingleFieldAuthor(
+				next.lastName, next.creatorType, mode,
+			);
+			if (split) {
+				next = {
+					firstName: split.firstName,
+					lastName: split.lastName,
+					fieldMode: 0,
+					creatorType: next.creatorType,
+				};
+				changed = true;
+			}
+		}
+
+		// ----- Normalise each part (APA 7 initials / particles / R20) -----
+		// Only run `normalise` on the *given name* if it already looks
+		// like initials (single letter or letter+dot). Otherwise the
+		// normaliser would treat a single-token all-caps given name
+		// like "ERMAN" as a surname and return "Erman" instead of
+		// the proper APA-7 initial "E.".
+		if (next.firstName && /^[A-Za-z]/.test(next.firstName)) {
+			// Try the full normaliser; if it routes to the surname
+			// path (single token), fall back to initials conversion.
+			var normGiven = NameNormalizer.normalise(next.firstName, mode);
+			var letters = normGiven.replace(/[^A-Za-z]/g, '');
+			// Heuristic: if the input was all-caps and the normaliser
+			// returned a multi-letter word (not an initial), reduce
+			// it to a single initial.
+			if (next.firstName.replace(/[^A-Za-z]/g, '') ===
+			    next.firstName.replace(/[^A-Za-z]/g, '').toUpperCase() &&
+			    next.firstName.replace(/[^A-Za-z]/g, '').length >= 2 &&
+			    letters.length > 1) {
+				normGiven = letters.charAt(0).toUpperCase() + '.';
+			}
+			if (normGiven !== next.firstName) {
+				next.firstName = normGiven;
+			}
+		}
+
+		// ----- R20: all-caps family name -----
+		if (next.lastName && next.fieldMode === 0) {
+			var lnLetters = next.lastName.replace(/[^A-Za-z]/g, '');
+			if (lnLetters.length >= 2 &&
+			    lnLetters === lnLetters.toUpperCase()) {
+				// Title-case the family name: first letter cap, rest lower.
+				// (Particles like "von" stay lowercase via NameNormalizer.)
+				var normSurname = NameNormalizer.normalise(next.lastName, mode);
+				if (normSurname !== next.lastName) {
+					next.lastName = normSurname;
+				}
+			}
+		}
+
+		// ----- Compare against original to detect change -----
+		var before = JSON.stringify({
+			firstName: c.firstName,
+			lastName: c.lastName,
+			fieldMode: c.fieldMode,
+			creatorType: c.creatorType,
+		});
+		var after = JSON.stringify(next);
+		if (after !== before) changed = true;
 		return next;
 	});
 	if (!changed) return false;
@@ -204,10 +289,10 @@ function mcApplyAPAFixes(item, issues, ctx) {
 
 	for (const issue of issues) {
 		if (!rules[issue.rule]) continue;
-		if (issue.severity === 'error' && !rules[issue.rule]) continue;
 		if (issue.field === 'creators') {
-			// R4: caps given names → already handled by mcNormaliseCreators
-			// if nameMode is 'initials'. Skip here to avoid double work.
+			// R4 / R18 / R20: handled by mcNormaliseCreators (single
+			// source of truth so we don't double-write). R19 creators
+			// are too — same reason.
 			continue;
 		}
 		if (!issue.after || issue.after === issue.before) continue;
@@ -465,6 +550,82 @@ async function runOnLibrary() {
 	return runOnItems(items, 'Zometaker — Library');
 }
 
+// Scan + repair authors stored as single-field (fieldMode=1).
+// This is the "fix the (D. A. Titone & Connine, 1999) bug" entry
+// point. Runs over the whole library or a selection — anything with
+// at least one single-field creator gets rewritten as two-field.
+async function repairSingleFieldAuthors(items) {
+	if (!items || !items.length) {
+		var zp = Zotero.getActiveZoteroPane();
+		var sel = (zp && zp.getSelectedItems) ? zp.getSelectedItems() : [];
+		items = sel.filter(function (it) {
+			return it.isRegularItem() && !it.isAttachment() && !it.isNote();
+		});
+		if (!items.length) {
+			var libraryID = Zotero.Libraries.userLibraryID;
+			var all = await Zotero.Items.getAll(libraryID, true, true);
+			items = all.filter(function (it) {
+				return it.isRegularItem() && !it.isAttachment() && !it.isNote();
+			});
+		}
+	}
+	var progress = makeProgress('Zometaker — Repair single-field authors');
+	var summary = {
+		scanned: items.length,
+		repaired: 0,
+		creatorsFixed: 0,
+		errors: 0,
+		startTime: Date.now(),
+	};
+	for (var i = 0; i < items.length; i++) {
+		var item = items[i];
+		var title = (mcReadField(item, 'title') || ('Item ' + item.id)).slice(0, 60);
+		progress.update(
+			'(' + (i + 1) + '/' + items.length + ') ' + title,
+			Math.round(((i + 1) / items.length) * 100),
+		);
+		try {
+			var creators = item.getCreators() || [];
+			var changed = false;
+			var updated = creators.map(function (c) {
+				if ((c.fieldMode || 0) !== 1 || !c.lastName) return c;
+				var split = NameNormalizer._splitSingleFieldAuthor(
+					c.lastName, c.creatorType, Prefs.nameMode || 'initials',
+				);
+				if (!split) return c;
+				changed = true;
+				return {
+					firstName: split.firstName,
+					lastName: split.lastName,
+					fieldMode: 0,
+					creatorType: c.creatorType,
+				};
+			});
+			if (changed) {
+				if (!Prefs.dryRun) {
+					item.setCreators(updated);
+					await item.saveTx();
+				}
+				summary.repaired += 1;
+				summary.creatorsFixed += updated.filter(function (c, idx) {
+					return JSON.stringify(c) !== JSON.stringify(creators[idx]);
+				}).length;
+			}
+		} catch (e) {
+			summary.errors += 1;
+			Zotero.debug('[Zometaker] repair failed for ' + item.id + ': ' + e);
+		}
+	}
+	summary.elapsedMs = Date.now() - summary.startTime;
+	progress.update(
+		'Repaired ' + summary.repaired + ' of ' + summary.scanned +
+			' items. ' + summary.creatorsFixed + ' creator(s) fixed.',
+		100,
+	);
+	progress.close();
+	return summary;
+}
+
 async function runOnSelection() {
 	var zp = Zotero.getActiveZoteroPane();
 	var selected = (zp && zp.getSelectedItems) ? zp.getSelectedItems() : [];
@@ -502,6 +663,10 @@ function showLastSummary() {
 		'Errors: ' + s.errors,
 	];
 	Services.prompt?.alert?.(null, 'Zometaker — Last run', lines.join('\n'));
+}
+
+function showLastSummaryOrAlert(msg) {
+	Services.prompt?.alert?.(null, 'Zometaker', msg || 'Done.');
 }
 
 // =================================================================
@@ -667,6 +832,10 @@ function _addToolsMenuItems(window) {
 	appendItem(
 		'zometaker-menu-run-on-selection',
 		function () { runOnSelection().catch(_logErr); }
+	);
+	appendItem(
+		'zometaker-menu-repair-authors',
+		function () { repairSingleFieldAuthors(null).catch(_logErr); }
 	);
 	appendItem(
 		'zometaker-menu-show-report',

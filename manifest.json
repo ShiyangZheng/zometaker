@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Zometaker",
-  "version": "1.1.0",
+  "version": "1.0.0",
   "description": "Tidy up messy Zotero Connector imports. Auto-update, normalise to APA 7, and fill missing metadata so your library reads like a real bibliography.",
   "homepage_url": "https://github.com/shiyangzheng/zometaker",
   "icons": {

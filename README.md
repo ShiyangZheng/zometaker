@@ -78,7 +78,7 @@ you're reading in Zotero.
 
 | Step | Tool | Action |
 | --- | --- | --- |
-| 1–2 | Zotero | Read the paper; notice a citation of interest. |
+| 1–2 | **Zotero** | Read the paper; notice a citation of interest. |
 | 3 | **citationHop** | Hotkey ⌘⇧L → publisher page in browser. |
 | 4 | Browser | Read the cited paper. |
 | 5 | **Zotero Connector** | Browser extension → item into Zotero. |
@@ -86,6 +86,19 @@ you're reading in Zotero.
 
 Together the three tools form a round-trip: **Zotero → browser → back
 to Zotero, with the metadata clean on both ends.**
+
+### Why Zometaker matters for this loop
+
+The Zotero Connector grabs papers from publisher pages fast — but
+not cleanly. Common artefact patterns that Zometaker fixes:
+
+| Connector gives you | Zometaker gives you |
+| --- | --- |
+| `ERMAN, B., & WARREN, B. (2000). The idiom principle...` | `Erman, B., & Warren, B. (2000). The idiom principle...` |
+| `Boers, F. (2006). ...Putting a Lexical                 Approach...` | `Boers, F. (2006). ...Putting a Lexical Approach...` |
+| `Sonbul, S. (2024). ...L2 <scp>Foo</scp> Bar...` | `Sonbul, S. (2024). ...L2 Foo Bar...` |
+| `Swinney, D. A. (1979). ...Memory &amp; Cognition` | `Swinney, D. A. (1979). ...Memory & Cognition` |
+| `Titone, D. A. (1999).` (Word cites as `(D. A. Titone, 1999)`) | `Titone, D. A. (1999).` (Word cites as `(Titone, 1999)`) |
 
 ---
 
@@ -167,10 +180,36 @@ Purdue OWL's reference guide.
 | **R14** | Publisher has no leading `City:` location | Strip `City, ST:` prefix |
 | **R15** | Edition is `2nd ed.` style, not `Second Edition` | Numeric → ordinal + `ed.` |
 | **R17** | Required fields present per item type (journalArticle needs title, publicationTitle, volume, issue, pages, date; book needs title, date, publisher; etc.) | Flag; auto-fill via DOI/ISBN lookup |
+| **R18** | Author is stored as a single field (`fieldMode=1`) — Word/Google Docs citations render `D. A. Titone` instead of `Titone` until the surname and given name are split into separate fields | Re-split via `Zotero.Utilities.cleanAuthor`; rewrite as `fieldMode=0` |
+| **R19** | Stray HTML tags (`<scp>`, `<i>`), HTML entities (`&amp;`, `&nbsp;`), or weird whitespace runs (multi-space, NBSP, zero-width chars) in title / journal / publisher / creator names | Strip tags, decode entities, collapse whitespace |
+| **R20** | Family name in ALL-CAPS (`SPRENGER` → `Sprenger`, `VON GOETHE` → `Von Goethe`) | Sentence-case with particles preserved |
 
 You can enable / disable individual rule ids via the *Enabled rule
 ids* textbox in the preferences pane. Default:
-`R1,R4,R5,R6,R7,R8,R9,R11,R12,R13,R14,R15,R17`.
+`R1,R4,R5,R6,R7,R8,R9,R11,R12,R13,R14,R15,R17,R18,R19,R20`.
+
+### R18 — repair single-field authors
+
+When Zotero Connector saves an item via the "Add by Identifier" flow,
+some authors end up stored as `fieldMode=1` with the whole
+`"Surname, Given"` string crammed into `lastName` and `firstName=""`.
+Word's citation engine can't tell which is the surname, so it renders
+the whole string as "first last" — `(D. A. Titone & Connine, 1999)`
+instead of `(Titone & Connine, 1999)`.
+
+Zometaker fixes this:
+
+- **Automatic** — every "Update & normalise" command runs R18
+  repair as part of the creators pass
+- **One-click library scan** — Tools → **Repair single-field
+  authors** (no metadata fetch, no network, just author cleanup)
+- Splits via `Zotero.Utilities.cleanAuthor` (the same splitter every
+  Zotero translator uses), then normalises each part per APA 7
+
+| Before (`fieldMode=1`) | After (`fieldMode=0`) |
+| --- | --- |
+| `lastName="Titone, D. A."`, `firstName=""` | `lastName="Titone"`, `firstName="D. A."` |
+| `lastName="Connine, C. M."`, `firstName=""` | `lastName="Connine"`, `firstName="C. M."` |
 
 ### Capitalisation examples
 
@@ -186,12 +225,18 @@ ids* textbox in the preferences pane. Default:
 | `NATURE` | `Nature` | R7 |
 | `IEEE TRANSACTIONS ON PATTERN ANALYSIS` | `IEEE Transactions on Pattern Analysis` | R7 (acronym preserved) |
 | `DEEP LEARNING FOR NLP` | `Deep learning for NLP` | R6 (sentence case) |
+| `Memory &amp; Cognition` | `Memory & Cognition` | R7 + R19 |
 | `vol. 12` | `12` | R8 |
 | `no. 3` | `3` | R9 |
 | `123-456` | `123–456` | R11 |
 | `doi:10.1038/nature12373` | `https://doi.org/10.1038/nature12373` | R12 |
 | `New York, NY: Routledge` | `Routledge` | R14 |
 | `Second Edition` | `2nd ed.` | R15 |
+| `ERMAN` (given name, all-caps) | `E.` | R4 |
+| `SPRENGER` (family name, all-caps) | `Sprenger` | R20 |
+| `VON GOETHE` (family name, all-caps) | `Von Goethe` | R20 (particle preserved) |
+| `Putting a Lexical                 Approach to the test` | `Putting a Lexical Approach to the test` | R19 |
+| `Learning L2 <scp>Foo</scp> bar` | `Learning L2 Foo bar` | R19 |
 
 All normalisations are idempotent — running twice gives the same result.
 
@@ -277,6 +322,6 @@ MIT. See top-of-file headers in each source file.
 
 ## Credits
 
-Originally developed as **Metadata Caretaker** (v1.0.0 — v1.1.12).
-Renamed to **Zometaker** in v1.1.0 to clarify that it's specifically
+Originally developed as **Metadata Caretaker**.
+Renamed to **Zometaker** in v1.0.0 to clarify that it's specifically
 targeted at cleaning up Zotero Connector imports.

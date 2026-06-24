@@ -163,8 +163,10 @@ var FieldNormalizer = (function () {
 		// Strip trailing period (CSL convention).
 		s = s.replace(/\.\s*$/, '');
 
-		// Normalise "&" vs "and".
-		s = s.replace(/\s+&\s+/g, ' and ');
+		// Keep "&" in journal titles per APA 7 (e.g. "Memory &
+		// Cognition", "Brain & Language"). Only collapse double
+		// whitespace around the ampersand.
+		s = s.replace(/\s*&\s*/g, ' & ');
 
 		const tokens = s.split(/(\s+)/);
 		const letterTokens = tokens.filter((t) => !/^\s+$/.test(t));

@@ -26,7 +26,8 @@ zip -rX "${OUT_PATH}" . \
      "tests/*" \
      ".git/*" \
      ".DS_Store" \
-     "node_modules/*"
+     "node_modules/*" \
+     "*.xpi"
 
 echo "Built ${OUT_PATH}"
 ls -lh "${OUT_PATH}"

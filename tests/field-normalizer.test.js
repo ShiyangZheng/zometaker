@@ -35,7 +35,7 @@ eq(FieldNormalizer.normaliseJournal('JOURNAL OF THE ACM'),
 eq(FieldNormalizer.normaliseJournal('PROCEEDINGS OF THE 56TH ANNUAL MEETING'),
    'Proceedings of the 56th Annual Meeting', 'journal numbers + meeting');
 eq(FieldNormalizer.normaliseJournal('past & present'),
-   'Past and Present', 'journal & normalised to and');
+   'Past & Present', 'journal keeps & (APA 7)');
 
 // ----- Title: sentence case (APA 7) -----
 eq(FieldNormalizer.normaliseTitle('the quick brown fox'),

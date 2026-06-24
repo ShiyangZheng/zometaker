@@ -95,5 +95,42 @@ eq(NameNormalizer.splitForZotero('John Smith'), { firstName: 'John', lastName: '
 eq(NameNormalizer.splitForZotero('Smith, John'), { lastName: 'Smith', firstName: 'John' }, 'split inverted');
 eq(NameNormalizer.splitForZotero('Plato'), { firstName: '', lastName: 'Plato' }, 'split single token');
 
+// ----- _splitSingleFieldAuthor (the (D. A. Titone & Connine, 1999) fix) -----
+eq(
+	NameNormalizer._splitSingleFieldAuthor('Titone, D. A.', 'author', 'initials'),
+	{ firstName: 'D. A.', lastName: 'Titone', creatorType: 'author' },
+	'split single-field Titone, D. A.',
+);
+eq(
+	NameNormalizer._splitSingleFieldAuthor('Connine, C. M.', 'author', 'initials'),
+	{ firstName: 'C. M.', lastName: 'Connine', creatorType: 'author' },
+	'split single-field Connine',
+);
+eq(
+	NameNormalizer._splitSingleFieldAuthor('Smith, John Michael', 'author', 'initials'),
+	{ firstName: 'J. M.', lastName: 'Smith', creatorType: 'author' },
+	'split single-field multi-given',
+);
+eq(
+	NameNormalizer._splitSingleFieldAuthor('World Health Organization', 'author', 'initials'),
+	{ firstName: '', lastName: 'World Health Organization', creatorType: 'author' },
+	'split institutional (no comma, multi-token → single surname)',
+);
+eq(
+	NameNormalizer._splitSingleFieldAuthor('von Goethe', 'author', 'initials'),
+	{ firstName: '', lastName: 'Von Goethe', creatorType: 'author' },
+	'split particle single-name',
+);
+eq(
+	NameNormalizer._splitSingleFieldAuthor('', 'author', 'initials'),
+	null,
+	'split empty input → null',
+);
+eq(
+	NameNormalizer._splitSingleFieldAuthor('Plato', 'author', 'initials'),
+	{ firstName: '', lastName: 'Plato', creatorType: 'author' },
+	'split mononym',
+);
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);
